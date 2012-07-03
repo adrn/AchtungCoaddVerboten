@@ -1,0 +1,144 @@
+\documentclass[12pt,preprint]{aastex}
+
+\newcounter{address}
+\setcounter{address}{1}
+
+\newcommand{\project}[1]{\textsl{#1}}
+\newcommand{\documentname}{\textsl{Note}}
+
+\title{Pan-STARRS: Don't coadd your data!}
+\author{
+  Adrian~M.~Price-Whelan\altaffilmark{\ref{col}},
+  David~W.~Hogg\altaffilmark{\ref{CCPP},\ref{email}}
+}
+
+\altaffiltext{\theaddress}{\stepcounter{address}\label{col} Department of Astronomy, Columbia University, 550 W 120th St., New York, NY 10027, USA}
+\altaffiltext{\theaddress}{\stepcounter{address}\label{CCPP} Center
+for Cosmology and Particle Physics, Department of Physics, New York
+University, 4 Washington Place, New York, NY 10003}
+\altaffiltext{\theaddress}{\stepcounter{address}\label{email} To whom
+correspondence should be addressed: \texttt{david.hogg@nyu.edu}}
+
+\begin{abstract}
+TODO!
+\end{abstract}
+
+% From http://arxiv.org/pdf/0807.2515v1.pdf: By applying a
+% homogenization process that brings all input images to a common PSF
+% before the coaddition, one produces coadd images where the catalog
+% depth and completeness information is much easier to extract. We
+% have developed tools to carry out PSF homogenization to the median
+% seeing on the input single epoch images during the process of
+% coaddition to explore whether the completeness and depth are then
+% simply related to the coadd image pixel variances.
+
+% An oldie-but-goodie: 
+% http://articles.adsabs.harvard.edu/cgi-bin/nph-iarticle_query?1994AJ....107..802F&amp;data_type=PDF_HIGH&amp;whole_paper=YES&amp;type=PRINTER&amp;filetype=.pdf
+
+% From http://arxiv.org/pdf/1011.4059v1.pdf: 
+% The approach outlined in Kaiser (2004) is to Fourier
+% transform each image and estimate the uth Fourier coeﬃcient of g by
+% a weighted average of the uth Fourier coeﬃcient of each image. The
+% weighting is accomplished so that the images with better seeing are
+% weighted more heavily in the average.
+
+\begin{document}
+
+\section{Introduction}
+The co-adding, averaging, or stacking of data has been immensely
+successful in astronomy.  Some of the most important results have come
+from analyses of stacked images.  For example, the Hubble Deep Field
+(citation) and Ultra-deep Field (citation) produced their immensely
+deep catalogs from stacked images.  For another, the 2MASS survey
+images and catalogs are a product of image averaging (citation).  It
+would take volumes to cite all of the important examples.  There are
+also many examples of important results of stacking of spectra or
+images of objects that are not expected to be identical, but rather
+similar in some relevant way; features can be detected frequently in
+the stack that could never be detected in any individual contributor
+(Hogg specific examples and citations).
+
+Imagine that you have many images of a very faint source; imagine that
+this source is so faint that it cannot be detected at reasonable
+significance in any of the individual images.  How should you detect,
+photometer, and measure the properties of this source?  The temptation
+will be to co-add or stack the images, and detect, photometer, and
+measure the source in the stacked image.  To be extremely specific,
+the temptation is to take at each pixel location $i$ all the images
+$j$, each of which has an intensity estimate $I_{ij}$ for that pixel
+location and an estimate of the variance $\sigma_{ij}^2$ of the
+intensity estimate, and produce the stack estimate $I_i$ for that
+pixel by
+\begin{equation}
+I_i \leftarrow \left[\sum_j \frac{1}{\sigma_{ij}^2}\right]^{-1}
+  \,\sum_j \frac{I_{ij}}{\sigma_{ij}^2}
+\quad ,
+\end{equation}
+that is, the inverse-variance-weighted average at pixel location $i$.
+This is the best (lowes variance) possible estimate of the intensity.
+In what follows, we will show that this approach is lower in precision
+than doing the Right Thing (tm), which is to build a model of the
+source in all of the individual images.
+
+In ground-based astronomy, each of the images in your set will, in
+general, have different point-spread function, different throughput
+(transparency), different sky level, different sky and source noise,
+and different locations of cosmic ray hits and defects.  Furthermore,
+the images will not in general be precisely aligned astrometrically,
+both because the images will be---should be---taken at different
+offsets and orientations, but also because there are atmospheric
+distortions that make even aligned telescope pointings produce
+mis-aligned images at the pixel level.  In general, of course, the
+images of interest might come from different telescopes, with
+different cameras, and be taken in different bands; in these cases the
+heterogeneity is even larger.  Unless we can show that analysis of
+this set of heterogeneous images is simple, stacking is very tempting.
+
+Going against the temptation to stack the images is the technical
+point that stacking clearly throws away information: There is much
+more information in the full list of pixels $I_{ij}$ than in the (much
+smaller set of) stack pixels $I_i$.  That said, stacking \emph{can} be
+justified in an extremely unrealistic limit: If \textsl{(a)}~the
+point-spread function never varies, \textsl{(b)}~the source fluxes and
+positions and morphologies don't change at all from image to image,
+\textsl{(c)}~all the images are properly sky-subtracted and calibrated
+(in intensity), \textsl{(d)}~the noise in the image is either Gaussian
+or Poisson, and the noise variance is known accurately in every pixel
+of every image, \textsl{(e)}~the images have perfectly understood
+world coordinate systems and have been interpolated onto a common
+pixel grid precisely, and \textsl{(f)}~there are no unmasked
+(zero-inverse-variance) defects, cosmic rays, or outliers in the full
+list of pixel values $I_{ij}$.
+
+The time-variability point is of great importance in the coming years,
+with time-domain astrophysics driving many new large projects.  It is
+impossible, in a na\"ive image-stacking context, to measure the
+variability or movement of a source that is detectable in the stacked
+image but not individually detectable in individual images or shorter
+(fewer-image) stacks.  And yet, in many cases, there \emph{will} be
+sufficient information in the original pixels to make the measurement.
+We demonstrated this for the measurement of faint source proper
+motions in repeat imaging from the \project{Sloan Digital Sky Survey}
+(Lang et al, 2009): By fitting the individual image pixels, we were
+able to measure the proper motions of sources too faint to detect in
+any individual image.  Clearly this project could only be achieved
+through modeling all of the pixels in all of the exposures.  Image
+stacking makes the objective impossible.  What might not be so
+obvious---and what we demonstrate in this \documentname---is that even
+simple measurements of flux and position can be corrupted by image
+stacking, even in well-behaved and properly calibrated and understood
+data.
+
+From an engineering perspective, stacking \emph{can} be the right
+thing to do: For some experiments, the benefit---in terms of savings
+of time and effort---achieved by stacking the images (relative to
+doing the Right Thing) can outweigh the costs---in precision and
+accuracy.  Consider this \documentname\ a first step at quantifying
+the benefits and costs of doing this violence to your hard-earned
+data.  The results are so simple, we expect that in practice this
+cost--benefit analysis will rarely come down on the side of stacking.
+
+\section{Method}
+
+
+\end{document}
