@@ -2,12 +2,14 @@
 
 # Standard library
 import os, sys
+import logging
 
 # Third-party
 import Image
 import numpy as np
 import matplotlib.cm as cm
 import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import axes3d
 import scipy.optimize as so
 
 def save_image_data(data, filename, min=None, max=None, clip=True):
@@ -91,6 +93,7 @@ def plot_grid(images, filename):
     plt.subplots_adjust(wspace=-0.4, hspace=0.0)
     fig.savefig(filename)
 
+'''
 def gaussian2D(p, x, y):
     """ Returns a 2D Gaussian on the meshgrid x,y given the parameter array 'p'
 
@@ -146,23 +149,33 @@ def fit_2d_gaussian(data):
                                     full_output=False)
     
     return fitParameters
+'''
 
-def centroid_star(image, gridsize=3):
-    """ Given noisy image data, and the 'model' image data (noiseless image),
-        compute the chi-squared at all positions on a 3x3 grid around the nominal
-        (true, known) position of the star.
-    """
-    f = gridsize-1
-    g = np.ceil(gridsize / 2)
+def surface_model(params, x, y):
+    a, b, c, d, e, f = params
+    return a + (b * x) + (c * y) + (d * x ** 2) + (2.0 * e * x * y) + (f * y ** 2)
+
+def error_function(params, x, y, data):
+    return surface_model(params, x, y) - data
+
+def fit_surface(data):
+    """ Fit a 2D surface to 3D data """
     
-    chisq = np.zeros((gridsize,gridsize), dtype=float)
-    data_cutout = image.image_data[g:-g,g:-g]
-    shp = image.star_image_data.shape
+    r = data.shape[0]
+    xx, yy = np.meshgrid(range(r), range(r))
+    initialParameterGuess = [0.]*6
     
-    for ii in range(gridsize):
-        for jj in range(gridsize):
-            star_cutout = image.star_image_data[ii:shp[0]+ii-f,jj:shp[1]+jj-f] 
-            chisq[ii,jj] = np.sum((data_cutout-star_cutout)**2) / image.sigma**2
+    fitParameters, ier = so.leastsq(error_function, \
+                                    initialParameterGuess, \
+                                    args=(xx.ravel(), yy.ravel(), data.ravel()), \
+                                    maxfev=10000, \
+                                    full_output=False)
     
-    print np.unravel_index(chisq.argmin(), chisq.shape)
-    
+    return fitParameters
+
+def surface_maximum(params):
+    """ Compute the maximum of a 2D surface, given the parameters of the model """
+    a,b,c,d,e,f = params
+    x = (c*e - b*f) / (2.0*d*f - 2.0*e**2)
+    y = (b*e - c*d) / (2.0*d*f - 2.0*e**2)
+    return x,y

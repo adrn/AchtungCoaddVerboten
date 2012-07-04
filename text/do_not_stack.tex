@@ -139,6 +139,8 @@ data.  The results are so simple, we expect that in practice this
 cost--benefit analysis will rarely come down on the side of stacking.
 
 \section{Method}
+We begin by simulating a stack of multi-epoch imaging with ideal conditions: perfectly aligned (registered) images of a single, faint point source (star). The star flux is fixed at a value, but the FWHM (e.g. the seeing) of the star in a given image is drawn from a uniform distribution between 1-2 pixels. The star's position is also stationary and, for convenience, set to be the exact middle of the image. Between epochs, the sky brightness is drawn from a uniform distribution and the thermal variance (e.g. read noise) is also drawn from a uniform distribution between 1-1.5 flux units. % APW: flux units??
 
+Once we generate a set of observations, we cumulatively sum the images with different ordering and weighting of the stack. 
 
 \end{document}

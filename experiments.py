@@ -9,15 +9,57 @@ from argparse import ArgumentParser
 
 # Third-party
 import matplotlib
-matplotlib.use("WxAgg")
+matplotlib.use("TkAgg")
+import matplotlib.cm as cm
 import numpy as np
 np.set_printoptions(linewidth=150, precision=5)
 import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import axes3d
 
 # Project
 import dont_coadd.util as dcu
 import dont_coadd.dcimage as dcimage
 
+def best_worst_smoothed_unsmoothed_plot(images, smoothed_images):
+    """ Generate two plots: 
+        - the first is what we think is the *best* epoch, smoothed and unsmoothed, noisy and noiseless
+        - the second is what we think is the *worst* epoch, smoothed and unsmoothed, noisy and noiseless
+        
+        Note: the Gremlin should f-ck with this!
+    """
+        
+    images = sorted(images, key=lambda x: x.star.sigma)
+    smoothed_images = sorted(smoothed_images, key=lambda x: x.star.sigma)
+    
+    plt.figure()
+    plt.subplot(221)
+    plt.imshow(images[0].star_model_data, cmap=cm.gray, interpolation="none")
+    plt.subplot(222)
+    plt.imshow(images[0].image_data, cmap=cm.gray, interpolation="none")
+    plt.subplot(223)
+    plt.imshow(smoothed_images[0].star_model_data, cmap=cm.gray, interpolation="none")
+    plt.subplot(224)
+    plt.imshow(smoothed_images[0].image_data, cmap=cm.gray, interpolation="none")
+    
+    plt.figure()
+    plt.subplot(221)
+    plt.imshow(images[-1].star_model_data, cmap=cm.gray, interpolation="none")
+    plt.subplot(222)
+    plt.imshow(images[-1].image_data, cmap=cm.gray, interpolation="none")
+    plt.subplot(223)
+    plt.imshow(smoothed_images[-1].star_model_data, cmap=cm.gray, interpolation="none")
+    plt.subplot(224)
+    plt.imshow(smoothed_images[-1].image_data, cmap=cm.gray, interpolation="none")
+    plt.show()
+
+def compute_offsets(coadded_images, plot=False):
+    offsets = []
+    for coadded_image in coadded_images:
+        x0,y0 = coadded_image.centroid_star(gridsize=3, plot=plot)
+        offsets.append(np.sqrt((x0-star_pos)**2 + (y0-star_pos)**2))
+    
+    return offsets
+    
 if __name__ == "__main__":
     parser = ArgumentParser(description="Don't coadd your images!")
     #parser.add_argument("-o", "--overwrite", action="store_true", dest="overwrite", default=False,
@@ -61,7 +103,7 @@ if __name__ == "__main__":
             
             # Create a star with uniform random spread
             star_pos = args.image_size // 2
-            star_sigma = np.random.uniform(1.5, 2.0)
+            star_sigma = np.random.uniform(1., 2.) # APW: MAGIC NUMBERS!
             logging.debug("\t\t- Star sigma: {:0.2f}".format(star_sigma))
             star = dcimage.DCStar((star_pos,star_pos), args.star_flux, star_sigma)
             
@@ -84,6 +126,11 @@ if __name__ == "__main__":
             
             images.append(im)
         
+        if args.verbose and args.plot and trial == args.plot_trial:
+            plot = True
+        else:
+            plot = False
+        
         # Get worst sigma to smooth to
         star_sigmas = np.array([image.star.sigma for image in images])
         worst_psf = star_sigmas.max()
@@ -98,21 +145,27 @@ if __name__ == "__main__":
         psf_none = dcimage.cumulative_coadd(images, weight_by=None)
         psf_none_smoothed = dcimage.cumulative_coadd(smoothed_images, weight_by=None)
         
+        psf_none_offsets = compute_offsets(psf_none, plot=plot)
+        psf_none_smoothed_offsets = compute_offsets(psf_none_smoothed, plot=plot)
+        
         #   - Weighted by [Signal/Noise]^2
         psf_sn2 = dcimage.cumulative_coadd(images, weight_by="SN2")
         psf_sn2_smoothed = dcimage.cumulative_coadd(smoothed_images, weight_by="SN2")
         
-        if args.verbose and args.plot and trial == args.plot_trial:
-            fig = plt.figure()
-            ax1 = fig.add_subplot(221)
-            psf_none[-1].show(ax1)
-            ax2 = fig.add_subplot(222)
-            psf_none_smoothed[-1].show(ax2)
-            ax3 = fig.add_subplot(223)
-            psf_sn2[-1].show(ax3)
-            ax4 = fig.add_subplot(224)
-            psf_sn2_smoothed[-1].show(ax4)
-            plt.show()
+        psf_sn2_offsets = compute_offsets(psf_sn2, plot=plot)
+        psf_sn2_smoothed_offsets = compute_offsets(psf_sn2_smoothed, plot=plot)
+        
+        #best_worst_smoothed_unsmoothed_plot(images, smoothed_images)
+        
+        plt.plot(range(len(psf_sn2_offsets)), psf_none_offsets, label="psf_none")
+        plt.plot(range(len(psf_sn2_offsets)), psf_none_smoothed_offsets, label="psf_none_smoothed")
+        plt.plot(range(len(psf_sn2_offsets)), psf_sn2_offsets, label="psf_sn2")
+        plt.plot(range(len(psf_sn2_offsets)), psf_sn2_smoothed_offsets, label="psf_sn2_smoothed")
+        plt.legend()
+        plt.ylim(0,2)
+        plt.show()
+        
+        sys.exit(0)
         
         # ==========================================================
         # Sort on DECREASING [Signal/Noise]^2:

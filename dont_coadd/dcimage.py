@@ -3,12 +3,14 @@
 # Standard library
 import os, sys
 import copy
+import logging
 
 # Third-party
 import Image
 import numpy as np
 import matplotlib.cm as cm
 import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import axes3d
 from scipy.ndimage.filters import gaussian_filter
 
 # Project
@@ -74,8 +76,8 @@ class DCImage(object):
         x = np.arange(self.shape[0])
         y = np.arange(self.shape[1])
         x_grid, y_grid = np.meshgrid(x,y)
-        self.star_image_data = self.star.flux / (2.*np.pi*self.star.sigma**2) * np.exp(- ((x_grid-self.star.x0)**2 + (y_grid-self.star.y0)**2) / (2*self.star.sigma**2))
-        self.image_data += self.star_image_data
+        self.star_model_data = self.star.flux / (2.*np.pi*self.star.sigma**2) * np.exp(- ((x_grid-self.star.x0)**2 + (y_grid-self.star.y0)**2) / (2*self.star.sigma**2))
+        self.image_data += self.star_model_data
     
     @property
     def size(self):
@@ -93,12 +95,21 @@ class DCImage(object):
         # Return smoothed copy of the image
         copied = copy.copy(self)
         copied.image_data = gaussian_filter(self.image_data-self.sky_level, smoothing_sigma)
+        copied.star_model_data = gaussian_filter(self.star_model_data, smoothing_sigma)
+        
         return copied
     
     def gremlinized(self, amplitude):
         copied = copy.copy(self)
         copied.sigma = self.sigma * np.random.uniform(1-amplitude, 1+amplitude)
         copied.star.sigma = self.star.sigma * np.random.uniform(1-amplitude, 1+amplitude)
+        
+        # Replace star model image with gremlinized model
+        x = np.arange(copied.shape[0])
+        y = np.arange(copied.shape[1])
+        x_grid, y_grid = np.meshgrid(x,y)
+        copied.star_model_data = copied.star.flux / (2.*np.pi*copied.star.sigma**2) * np.exp(- ((x_grid-copied.star.x0)**2 + (y_grid-copied.star.y0)**2) / (2*copied.star.sigma**2))
+        
         return copied
     
     def show(self, ax=None):
@@ -118,6 +129,43 @@ class DCImage(object):
             filename = "index{}.png".format(self.index)
         
         return util.save_image_data(self.image_data, filename=filename, min=min, max=max, clip=clip)
+    
+    def centroid_star(self, gridsize=3, plot=False, ax=None):
+        """ Given noisy image data, and the 'model' image data (noiseless image),
+            compute the chi-squared at all positions on a 3x3 grid around the nominal
+            (true, known) position of the star.
+        """
+        f = gridsize-1
+        g = np.ceil(gridsize / 2)
+        
+        chisq = np.zeros((gridsize,gridsize), dtype=float)
+        data_cutout = self.image_data[g:-g,g:-g]
+        shp = self.star_model_data.shape
+        
+        for ii in range(gridsize):
+            for jj in range(gridsize):
+                star_cutout = self.star_model_data[ii:shp[0]+ii-f,jj:shp[1]+jj-f] 
+                chisq[ii,jj] = np.sum((data_cutout-star_cutout)**2) / self.sigma**2
+    
+        #logging.debug("Smallest chi-square: {}".format(np.unravel_index(chisq.argmin(), chisq.shape)))
+        params = util.fit_surface(chisq)
+        
+        if plot:
+            xx,yy = np.meshgrid(range(gridsize), range(gridsize))
+            
+            if ax == None:
+                fig = plt.figure()
+                ax = fig.add_subplot(111, projection='3d')
+                ax.plot_wireframe(xx, yy, chisq)
+                fig.show()
+            else:
+                ax.plot_wireframe(xx, yy, chisq)
+                return ax
+        
+        x0,y0 = util.surface_maximum(params)
+        d = (self.shape[0] - gridsize) / 2
+        logging.debug("\t\tFound star at: {}".format((x0+d, y0+d)))
+        return (x0+d, y0+d)
 
 class DCCoaddedImage(DCImage):
     
@@ -143,8 +191,8 @@ class DCCoaddedImage(DCImage):
         image_data = np.array([image.image_data-image.sky_level for image in images])
         self.image_data = np.sum(weight_images*image_data, axis=0) / np.sum(weight_images, axis=0)
         
-        star_image_data = np.array([image.star_image_data for image in images])
-        self.star_image_data = np.sum(weight_images*star_image_data, axis=0) / np.sum(weight_images, axis=0)
+        star_model_data = np.array([image.star_model_data for image in images])
+        self.star_model_data = np.sum(weight_images*star_model_data, axis=0) / np.sum(weight_images, axis=0)
     
     @property
     def SN2(self): return None
@@ -157,7 +205,7 @@ def cumulative_coadd(images, weight_by=None):
     
     coadded_images = []
     for ii in range(len(images)):
-        coadded_images.append(DCCoaddedImage(images[:ii+1]))
+        coadded_images.append(DCCoaddedImage(images[:ii+1], index=ii, weight_by=weight_by))
     
     return coadded_images
     
