@@ -1,4 +1,6 @@
-.png
-.log
-.pdf
-.aux
+*.png
+*.log
+*.pdf
+*.aux
+*.synctex*
+old/*
