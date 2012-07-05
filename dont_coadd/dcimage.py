@@ -1,3 +1,5 @@
+# coding: utf-8
+
 """ """
 
 # Standard library
@@ -16,8 +18,20 @@ from scipy.ndimage.filters import gaussian_filter
 # Project
 import util
 
+# ==================================================================================================
+
+# Create logger
+logger = logging.getLogger(__name__)
+ch = logging.StreamHandler()
+formatter = logging.Formatter("%(name)s / %(levelname)s / %(message)s")
+ch.setFormatter(formatter)
+logger.addHandler(ch)
+
 class DCStar(object):
     """ A simulated observation of a star """
+    
+    def __repr__(self):
+        return "<DCStar ({:0.2f},{:0.2f}), Flux={:0.1f}, σ={:.2f}>".format(self.x0, self.y0, self.flux, self.sigma)
     
     def __init__(self, position, flux, sigma):
         """ Parameters
@@ -33,9 +47,14 @@ class DCStar(object):
         self.x0, self.y0 = position
         self.flux = flux
         self.sigma = sigma
+        
+        logger.debug("Created new DCStar : {}".format(self))
 
 class DCImage(object):
     """ A simulated image with a single point-source (star) """
+    
+    def __repr__(self):
+        return "<DCImage {shape[0]}x{shape[1]} index={index}>".format(shape=self.shape, index=self.index)
     
     def __init__(self, shape, index=None):
         """ Parameters
@@ -57,6 +76,8 @@ class DCImage(object):
         # Create zeroed image array
         self.image_data = np.zeros(self.shape, dtype=float)
         
+        logger.debug("Created new DCImage : {}".format(self))
+        
     def add_noise(self, sigma, sky_level):
         """ Add Gaussian noise to the image with the given root-variance 'sigma' 
             and a uniform sky brightness 'sky_level' 
@@ -68,6 +89,8 @@ class DCImage(object):
         
         self.sky_level = sky_level
         self.image_data += sky_level
+        
+        logger.debug("Added noise to <DCImage index={}> with sky={:0.2f}, σ={:.2f}".format(self.index, self.sky_level, self.sigma))
     
     def add_star(self, star):
         """ Add a DCStar to the image """
@@ -78,6 +101,8 @@ class DCImage(object):
         x_grid, y_grid = np.meshgrid(x,y)
         self.star_model_data = self.star.flux / (2.*np.pi*self.star.sigma**2) * np.exp(- ((x_grid-self.star.x0)**2 + (y_grid-self.star.y0)**2) / (2*self.star.sigma**2))
         self.image_data += self.star_model_data
+        
+        logger.debug("Added {star} to {img}".format(img=self, star=self.star))
     
     @property
     def size(self):
@@ -85,10 +110,10 @@ class DCImage(object):
     
     @property
     def SN2(self):
-        return 1.0 / (self.star.sigma**2 * self.sigma**2)
+        return 1.0 / (self.star.sigma * self.sigma)**2
     
     def smoothed(self, sigma):
-        """ Smooth the image by the specified ??? APW """
+        """ Return a smoothed copy of the current image instance. """
         
         smoothing_sigma = np.sqrt(sigma**2 - self.star.sigma**2)
         
@@ -100,6 +125,12 @@ class DCImage(object):
         return copied
     
     def gremlinized(self, amplitude):
+        """ Return a gremlinized copy of the current image instance. Gremlinized means
+            our knowledge of the true read noise and star spread gets obscured by some
+            factor ('amplitude'), and our model image (the noiseless star image) is
+            changed to represent what we *think* the source is.
+        """
+            
         copied = copy.copy(self)
         copied.sigma = self.sigma * np.random.uniform(1-amplitude, 1+amplitude)
         copied.star.sigma = self.star.sigma * np.random.uniform(1-amplitude, 1+amplitude)
@@ -130,40 +161,26 @@ class DCImage(object):
         
         return util.save_image_data(self.image_data, filename=filename, min=min, max=max, clip=clip)
     
-    def centroid_star(self, gridsize=3, plot=False, ax=None):
+    def centroid_star(self, gridsize=3, plot=False):
         """ Given noisy image data, and the 'model' image data (noiseless image),
             compute the chi-squared at all positions on a 3x3 grid around the nominal
             (true, known) position of the star.
         """
-        f = gridsize-1
-        g = np.ceil(gridsize / 2)
-        
-        chisq = np.zeros((gridsize,gridsize), dtype=float)
-        data_cutout = self.image_data[g:-g,g:-g]
-        shp = self.star_model_data.shape
-        
-        for ii in range(gridsize):
-            for jj in range(gridsize):
-                star_cutout = self.star_model_data[ii:shp[0]+ii-f,jj:shp[1]+jj-f] 
-                chisq[ii,jj] = np.sum((data_cutout-star_cutout)**2) / self.sigma**2
-    
-        #logging.debug("Smallest chi-square: {}".format(np.unravel_index(chisq.argmin(), chisq.shape)))
+        chisq = util.position_chisq(self, gridsize)
         params = util.fit_surface(chisq)
+        #logging.debug("Smallest chi-square: {}".format(np.unravel_index(chisq.argmin(), chisq.shape)))
         
         if plot:
             xx,yy = np.meshgrid(range(gridsize), range(gridsize))
             
-            if ax == None:
-                fig = plt.figure()
-                ax = fig.add_subplot(111, projection='3d')
-                ax.plot_wireframe(xx, yy, chisq)
-                fig.show()
-            else:
-                ax.plot_wireframe(xx, yy, chisq)
-                return ax
+            fig = plt.figure()
+            ax = fig.add_subplot(111, projection='3d')
+            ax.plot_wireframe(xx+7, yy+7, chisq)
+            ax.plot([self.star.x0,self.star.x0],[self.star.y0,self.star.y0], [chisq.min(), chisq.max()], 'r-')
+            #fig.savefig("images/centroid_chisq_{}coadded.png".format(self.index+1))
         
         x0,y0 = util.surface_maximum(params)
-        d = (self.shape[0] - gridsize) / 2
+        d = (self.shape[0] - gridsize) / 2 + 1
         logging.debug("\t\tFound star at: {}".format((x0+d, y0+d)))
         return (x0+d, y0+d)
 
@@ -191,8 +208,12 @@ class DCCoaddedImage(DCImage):
         image_data = np.array([image.image_data-image.sky_level for image in images])
         self.image_data = np.sum(weight_images*image_data, axis=0) / np.sum(weight_images, axis=0)
         
+        # APW: HACK!
         star_model_data = np.array([image.star_model_data for image in images])
         self.star_model_data = np.sum(weight_images*star_model_data, axis=0) / np.sum(weight_images, axis=0)
+        
+        self.star = copy.copy(images[0].star)
+        self.star.sigma = None
     
     @property
     def SN2(self): return None

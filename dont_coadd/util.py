@@ -93,6 +93,25 @@ def plot_grid(images, filename):
     plt.subplots_adjust(wspace=-0.4, hspace=0.0)
     fig.savefig(filename)
 
+def position_chisq(image, gridsize):
+    """ Compute the chisquared value for placing the model in every position
+        on a 3x3 grid around the aligned positions.
+    """
+    
+    f = gridsize-1
+    g = np.ceil(gridsize / 2)
+    
+    chisq = np.zeros((gridsize,gridsize), dtype=float)
+    data_cutout = image.image_data[g:-g,g:-g]
+    shp = image.star_model_data.shape
+    
+    for ii in range(gridsize):
+        for jj in range(gridsize):
+            star_cutout = image.star_model_data[ii:shp[0]+ii-f,jj:shp[1]+jj-f] 
+            chisq[ii,jj] = np.sum((data_cutout-star_cutout)**2) / image.sigma**2
+    
+    return chisq
+
 '''
 def gaussian2D(p, x, y):
     """ Returns a 2D Gaussian on the meshgrid x,y given the parameter array 'p'
