@@ -29,9 +29,6 @@ logger.addHandler(ch)
 
 class DCStar(object):
     
-    def __repr__(self):
-        return "<DCStar ({:0.2f},{:0.2f}), Flux={:0.1f}, σ={:.2f}>".format(self.x0, self.y0, self.flux, self.sigma)
-    
     def __init__(self, position, flux, sigma):
         """ A simulated observation of a star.
         
@@ -51,6 +48,19 @@ class DCStar(object):
         
         logger.debug("Created new DCStar : {}".format(self))
     
+    def __repr__(self):
+        return "<DCStar ({:0.2f},{:0.2f}), Flux={:0.1f}, σ={:.2f}>".format(self.x0,
+                                                                           self.y0,
+                                                                           self.flux,
+                                                                           self.sigma)
+    
+    def image(self, shape):
+        """ Return a 2D array with the star. """
+        return util.gaussian(flux=self.flux, 
+                             position=(self.x0,self.y0),
+                             sigma=self.sigma,
+                             shape=shape)
+    
     def __add__(self, other):
         """ Add the star to the image. Addition only supported with 
             DCImage objects.
@@ -62,10 +72,7 @@ class DCStar(object):
         new_image = other.copy()
         
         new_image.star = self
-        new_image.data += util.gaussian(flux=self.flux, 
-                                              position=(self.x0,self.y0),
-                                              sigma=self.sigma,
-                                              shape=other.shape)
+        new_image.data += self.image(new_image.shape)
         
         logger.debug("Added {star} to {img}".format(img=other, star=self))
         
@@ -80,19 +87,39 @@ class DCGaussianNoiseModel(object):
         """ A Gaussian noise model for images with given std. dev. sigma
             and a uniform sky brightness sky_level.
         """
+        self.sigma = sigma
+        self.sky_level = sky_level
+    
+    def image(self, shape):
+        """ Return a 2D image with the given noise properties """
+        return np.random.normal(self.sky_level, self.sigma, shape)
+    
+    def __add__(self, other):
+        """ Add this noise model to the image. """
         
+        if not isinstance(other, DCImage):
+            raise TypeError("Addition only supported with DCImage objects.")
+            
+        new_image = other.copy()
+        new_image.sigma = np.sqrt(self.sigma**2 + other.sigma**2)
+        new_image.sky_level += self.sky_level
+        new_image.data += self.image(new_image.shape)
+        
+        logger.debug("Added noise to {} with sky={:0.2f}, σ={:.2f}".format(self, 
+                        self.sky_level, self.sigma))
+
+    def __radd__(self, other):
+        return self.__add__(other)
 
 class DCImage(object):
     """ A simulated astronomical image. """
-    
-    def __repr__(self):
-        return "<DCImage {shape[0]}x{shape[1]} id={id}>".format(shape=self.shape, id=self.id)
     
     def __init__(self, shape, id=None):
         """ Parameters
             ----------
             shape : tuple
-                Should be a tuple of (x,y) values representing the xsize, ysize of the image
+                Should be a tuple of (x,y) values representing the xsize, 
+                ysize of the image
             id : any hashable object
                 Within a trial, the ID of the image
         """
@@ -114,22 +141,12 @@ class DCImage(object):
         
         logger.debug("Created new DCImage : {}".format(self))
     
+    def __repr__(self):
+        return "<DCImage {shape[0]}x{shape[1]} id={id}>".format(shape=self.shape, 
+                                                                id=self.id)
+    
     def __hash__(self):
         return hash((self.id,self.shape[0], self.shape[1]))
-        
-    def add_noise(self, noise_model):
-        """ Add some noise model to the data.
-        """
-        
-        # Add noise to image data
-        self.sigma = np.sqrt(self.sigma**2 + sigma**2)
-        self._add_gaussian_noise(sigma)
-        
-        # Add some sky brightness
-        self.sky_level += sky_level
-        self.data += sky_level
-        
-        logger.debug("Added noise to {} with sky={:0.2f}, σ={:.2f}".format(self, sky_level, sigma))
     
     @property
     def size(self):
@@ -145,7 +162,7 @@ class DCImage(object):
         smoothing_sigma = np.sqrt(sigma**2 - self.star.sigma**2)
         
         # Return smoothed copy of the image
-        copied = copy.deepcopy(self)
+        copied = self.copy()
         copied.data = gaussian_filter(self.data-self.sky_level, smoothing_sigma)
         copied.star.sigma = sigma
         
@@ -174,59 +191,18 @@ class DCImage(object):
             ax.imshow(self.data, cmap=cm.gray, interpolation="none")
             return ax
     
-    def save(self, filename=None, min=None, max=None, clip=True):
-        """ Show the image as a bitmap using PIL """
+    def save(self, filename=None, **kwargs):
+        """ Save the image as a bitmap using PIL """
         
         if filename == None:
             filename = "index{}.png".format(self.index)
         
-        return util.save_image_data(self.data, filename=filename, min=min, max=max, clip=clip)
-    
-    @property
-    def star_model(self):
-        k = self.shape[0] // 2 + 1
-        star_data = util.gaussian_star(position=(k,k), flux=self.star.flux, sigma=self.star.sigma, shape=self.shape)
-        return star_data
-    
-    def centroid_star(self, gridsize=3, plot=False):
-        """ Given noisy image data, and the 'model' image data (noiseless image),
-            compute the chi-squared at all positions on a 3x3 grid around the nominal
-            (true, known) position of the star.
-        """
-        
-        chisq = util.position_chisq(self, gridsize=gridsize)
-        params = util.fit_surface(chisq)
-        
-        if plot:
-            xx,yy = np.meshgrid(range(gridsize), range(gridsize))
-            
-            fig = plt.figure()
-            ax = fig.add_subplot(111, projection='3d')
-            ax.plot_wireframe(xx+7, yy+7, chisq)
-            ax.plot([self.star.x0,self.star.x0],[self.star.y0,self.star.y0], [chisq.min(), chisq.max()], 'r-')
-            #fig.savefig("images/centroid_chisq_{}coadded.png".format(self.index+1))
-        
-        x0,y0 = util.surface_maximum(params)
-        d = (self.shape[0] - gridsize) / 2 + 1
-        
-        """
-        print self.shape
-        print d
-        print x0,y0
-        try:
-            print self.star.x0, self.star.y0
-        except:
-            print self.stars[0].x0, self.stars[0].y0
-        sys.exit(0)
-        """
-        
-        logger.debug("\t\tFound star at: {}".format((x0+d, y0+d)))
-        return (x0+d, y0+d)
+        return util.save_image_data(self.data, filename=filename, **kwargs)
     
     def copy(self):
         return copy.copy(self)
 
-class DCCoaddedImage(DCImage):
+class DCCoaddmaschine(object):
     
     def __init__(self, images, weight_by=None, index=None):
         """ """
