@@ -1,4 +1,5 @@
 # coding: utf-8
+from __future__ import division
 
 """ """
 
@@ -49,6 +50,11 @@ class DCStar(object):
         self.sigma = sigma
         
         logger.debug("Created new DCStar : {}".format(self))
+    
+    def image_data(self, shape):
+        """ Generate a star image of given shape """
+        
+        return util.gaussian_star(flux=self.flux, position=(self.x0,self.y0), sigma=self.sigma, shape=shape)
 
 class DCImage(object):
     """ A simulated image with a single point-source (star) """
@@ -95,12 +101,8 @@ class DCImage(object):
     def add_star(self, star):
         """ Add a DCStar to the image """
         self.star = star
-        
-        x = np.arange(self.shape[0])
-        y = np.arange(self.shape[1])
-        x_grid, y_grid = np.meshgrid(x,y)
-        self.star_model_data = self.star.flux / (2.*np.pi*self.star.sigma**2) * np.exp(- ((x_grid-self.star.x0)**2 + (y_grid-self.star.y0)**2) / (2*self.star.sigma**2))
-        self.image_data += self.star_model_data
+        self.star_image_data = self.star.image_data(shape=self.shape)
+        self.image_data += self.star_image_data
         
         logger.debug("Added {star} to {img}".format(img=self, star=self.star))
     
@@ -118,9 +120,9 @@ class DCImage(object):
         smoothing_sigma = np.sqrt(sigma**2 - self.star.sigma**2)
         
         # Return smoothed copy of the image
-        copied = copy.copy(self)
+        copied = copy.deepcopy(self)
         copied.image_data = gaussian_filter(self.image_data-self.sky_level, smoothing_sigma)
-        copied.star_model_data = gaussian_filter(self.star_model_data, smoothing_sigma)
+        copied.star.sigma = sigma
         
         return copied
     
@@ -134,12 +136,6 @@ class DCImage(object):
         copied = copy.copy(self)
         copied.sigma = self.sigma * np.random.uniform(1-amplitude, 1+amplitude)
         copied.star.sigma = self.star.sigma * np.random.uniform(1-amplitude, 1+amplitude)
-        
-        # Replace star model image with gremlinized model
-        x = np.arange(copied.shape[0])
-        y = np.arange(copied.shape[1])
-        x_grid, y_grid = np.meshgrid(x,y)
-        copied.star_model_data = copied.star.flux / (2.*np.pi*copied.star.sigma**2) * np.exp(- ((x_grid-copied.star.x0)**2 + (y_grid-copied.star.y0)**2) / (2*copied.star.sigma**2))
         
         return copied
     
@@ -161,14 +157,20 @@ class DCImage(object):
         
         return util.save_image_data(self.image_data, filename=filename, min=min, max=max, clip=clip)
     
+    @property
+    def star_model(self):
+        k = self.shape[0] // 2 + 1
+        star_data = util.gaussian_star(position=(k,k), flux=self.star.flux, sigma=self.star.sigma, shape=self.shape)
+        return star_data
+    
     def centroid_star(self, gridsize=3, plot=False):
         """ Given noisy image data, and the 'model' image data (noiseless image),
             compute the chi-squared at all positions on a 3x3 grid around the nominal
             (true, known) position of the star.
         """
-        chisq = util.position_chisq(self, gridsize)
+        
+        chisq = util.position_chisq(self, gridsize=gridsize)
         params = util.fit_surface(chisq)
-        #logging.debug("Smallest chi-square: {}".format(np.unravel_index(chisq.argmin(), chisq.shape)))
         
         if plot:
             xx,yy = np.meshgrid(range(gridsize), range(gridsize))
@@ -181,7 +183,19 @@ class DCImage(object):
         
         x0,y0 = util.surface_maximum(params)
         d = (self.shape[0] - gridsize) / 2 + 1
-        logging.debug("\t\tFound star at: {}".format((x0+d, y0+d)))
+        
+        """
+        print self.shape
+        print d
+        print x0,y0
+        try:
+            print self.star.x0, self.star.y0
+        except:
+            print self.stars[0].x0, self.stars[0].y0
+        sys.exit(0)
+        """
+        
+        logger.debug("\t\tFound star at: {}".format((x0+d, y0+d)))
         return (x0+d, y0+d)
 
 class DCCoaddedImage(DCImage):
@@ -200,20 +214,25 @@ class DCCoaddedImage(DCImage):
         
         # Figure out if the user wants to weight the images
         if weight_by == None:
-            weight_images = np.ones((len(images), ) + self.shape)
+            self.weight_images = np.ones((len(images), ) + self.shape)
         else:
-            weight_images = np.array([np.ones(self.shape)*getattr(image, weight_by) for image in images])
+            self.weight_images = np.array([np.ones(self.shape)*getattr(image, weight_by) for image in images])
         
         # Sum images with weights
         image_data = np.array([image.image_data-image.sky_level for image in images])
-        self.image_data = np.sum(weight_images*image_data, axis=0) / np.sum(weight_images, axis=0)
+        self.image_data = np.sum(self.weight_images*image_data, axis=0) / np.sum(self.weight_images, axis=0)
         
         # APW: HACK!
-        star_model_data = np.array([image.star_model_data for image in images])
-        self.star_model_data = np.sum(weight_images*star_model_data, axis=0) / np.sum(weight_images, axis=0)
+        #star_model_data = np.array([image.star_model_data for image in images])
+        #self.star_model_data = np.sum(weight_images*star_model_data, axis=0) / np.sum(weight_images, axis=0)
         
-        self.star = copy.copy(images[0].star)
-        self.star.sigma = None
+        self.stars = [image.star for image in images]
+    
+    @property
+    def star_model(self):
+        k = self.shape[0] // 2 + 1
+        star_data = np.array([util.gaussian_star(position=(k,k), flux=star.flux, sigma=star.sigma, shape=self.shape) for star in self.stars])
+        return np.sum(self.weight_images*star_data, axis=0) / np.sum(self.weight_images, axis=0)
     
     @property
     def SN2(self): return None

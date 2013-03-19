@@ -29,8 +29,16 @@ def compute_offsets(coadded_images):
     
     offsets = []
     for coadded_image in coadded_images:
-        x0,y0 = coadded_image.centroid_star(gridsize=5)
-        offsets.append(np.sqrt((x0-coadded_image.star.x0)**2 + (y0-coadded_image.star.y0)**2))
+        x0,y0 = coadded_image.centroid_star(gridsize=3)
+        try:
+            true_x0, true_y0 = coadded_image.star.x0, coadded_image.star.y0
+        except AttributeError:
+            # for a coadded image, read the first star from image.stars
+            true_x0, true_y0 = coadded_image.stars[0].x0, coadded_image.stars[0].y0
+        
+        dcimage.logger.debug("True star position: {x0},{y0}".format(x0=true_x0, y0=true_y0))
+        dcimage.logger.debug("Measured star position: {x0},{y0}".format(x0=x0, y0=y0))
+        offsets.append(np.sqrt((x0-true_x0)**2 + (y0-true_y0)**2))
     
     return np.array(offsets)
     
@@ -71,7 +79,7 @@ if __name__ == "__main__":
     # Create logger
     logger = logging.getLogger(__name__)
     ch = logging.StreamHandler() # console handler
-    ch.setLevel(logging.ERROR)
+    #ch.setLevel(logging.ERROR)
     
     formatter = logging.Formatter("%(name)s / %(levelname)s / %(message)s")
     ch.setFormatter(formatter)
@@ -88,9 +96,9 @@ if __name__ == "__main__":
     if args.test:
         test_mode()
     
-    # Enforce an even number of pixels
-    if args.image_size % 2 != 0:
-        raise ValueError("Image size must be an even integer. You entered: {}".format(args.image_size))
+    # Enforce an odd number of pixels
+    if args.image_size % 2 == 0:
+        raise ValueError("Image size must be an odd integer. You entered: {}".format(args.image_size))
     
     psf_none_offsets = np.zeros((args.num_trials,args.images_per_trial), dtype=float)
     psf_none_smoothed_offsets = np.zeros((args.num_trials,args.images_per_trial), dtype=float)
@@ -109,8 +117,7 @@ if __name__ == "__main__":
         images = []
         
         # Compute star position for all images in this trial
-        #star_position = np.random.uniform(-1,1,size=2) + args.image_size//2
-        star_position = (8., 8.)
+        star_position = np.random.uniform(-0.25,0.25,size=2) + 8 # DON'T CHANGE THIS DAMMIT
         
         # Create images to be sorted and coadded. The number depends on the type of 'survey'
         #   e.g. should be ~32 for Pan-STARRS, ~256 for LSST
@@ -120,10 +127,8 @@ if __name__ == "__main__":
             # Create an image, add star to image and add read noise / sky
             img = dcimage.DCImage(shape=(args.image_size,args.image_size), \
                                   index=index)
-            #img.add_noise(sky_level=np.random.uniform(5.), \
-            #              sigma=np.random.uniform(1, 1.5)) # APW: MAGIC NUMBERS!
             img.add_noise(sky_level=np.random.uniform(5.), \
-                          sigma=0.1) # APW: MAGIC NUMBERS!
+                          sigma=np.random.uniform(1., 1.4)) # APW: MAGIC NUMBERS!
             
             # Create a star with a FWHM drawn from a uniform distribution and a position drawn
             #   from a distribution within a few pixels of the center of the image
@@ -137,34 +142,41 @@ if __name__ == "__main__":
             logger.debug("Gremlinizing images!")
             images = [image.gremlinized(0.1) for image in images]
         
-        if args.plot and trial == args.plot_trial:
-            dctest.plot_raw_images(images)
-        
-        dctest.hogg_test_one(images[0])
-        sys.exit(0)
-        
         # Get the worst seeing image (sigma) to smooth the other epochs
         star_sigmas = np.array([image.star.sigma for image in images])
         worst_sigma = star_sigmas.max()
         dcimage.logger.debug("Worst σ = {:.2f}, Best σ = {:.2f}".format(worst_sigma, star_sigmas.min()))
         
         if args.verbose > 2 and args.plot and trial == args.plot_trial:
-            test.best_worst_smoothed_unsmoothed_plot(images)
+            dctest.best_worst_smoothed_unsmoothed_plot(images)
         
         # All of the below should get wrapped in a function that takes a list of images
         smoothed_images = [image.smoothed(sigma=worst_sigma) for image in images]
         
+        if args.plot and trial == args.plot_trial:
+            dctest.plot_raw_images(images, "raw")
+        
+        if args.plot and trial == args.plot_trial:
+            dctest.plot_raw_images(smoothed_images, "smoothed")
+        
         # ==========================================================================================
         # Sort on INCREASING PSF FWHM:
         #   e.g. image 0 has the *best* seeing, image [-1] has the *worst* after sort
-        images.sort(key=lambda x: x.star.sigma) # SORT IN PLACE
-        smoothed_images.sort(key=lambda x: x.star.sigma) # SORT IN PLACE
+        #images.sort(key=lambda x: x.star.sigma) # SORT IN PLACE
+        #smoothed_images.sort(key=lambda x: x.star.sigma) # SORT IN PLACE
+        imagesAndSmoothedImages = zip(images,smoothed_images)
+        imagesAndSmoothedImages.sort(key=lambda x: x[0].star.sigma, reverse=True)
+        images,smoothed_images = zip(*imagesAndSmoothedImages)
         
         # - Not Weighted
         psf_none = dcimage.cumulative_coadd(images, weight_by=None)
         psf_none_smoothed = dcimage.cumulative_coadd(smoothed_images, weight_by=None)
         psf_none_offsets[trial] = compute_offsets(psf_none)
         psf_none_smoothed_offsets[trial] = compute_offsets(psf_none_smoothed)
+        
+        if args.plot and trial == args.plot_trial:
+            dctest.plot_coadded_images(psf_none, "psf_none")
+            dctest.plot_coadded_images(psf_none_smoothed, "psf_none_smoothed")
         
         # - Weighted by [Signal/Noise]^2
         psf_sn2 = dcimage.cumulative_coadd(images, weight_by="SN2")
@@ -174,8 +186,11 @@ if __name__ == "__main__":
         
         # ==========================================================================================
         # Sort on DECREASING [Signal/Noise]^2:
-        images.sort(key=lambda x: x.SN2, reverse=True) # SORT IN PLACE
-        smoothed_images.sort(key=lambda x: x.SN2, reverse=True) # SORT IN PLACE
+        #images.sort(key=lambda x: x.SN2, reverse=True) # SORT IN PLACE
+        #smoothed_images.sort(key=lambda x: x.SN2, reverse=True) # SORT IN PLACE
+        imagesAndSmoothedImages = zip(images,smoothed_images)
+        imagesAndSmoothedImages.sort(key=lambda x: x[0].SN2)
+        images,smoothed_images = zip(*imagesAndSmoothedImages)
         
         # - Not Weighted
         sn2_none = dcimage.cumulative_coadd(images, weight_by=None)
@@ -188,9 +203,6 @@ if __name__ == "__main__":
         sn2_sn2_smoothed = dcimage.cumulative_coadd(smoothed_images, weight_by="SN2")
         sn2_sn2_offsets[trial] = compute_offsets(sn2_sn2)
         sn2_sn2_smoothed_offsets[trial] = compute_offsets(sn2_sn2_smoothed)
-    
-    
-    
     
     
     markers = ["o", ".", "^", "*", "D", "s", "d", "h"]
@@ -217,6 +229,6 @@ if __name__ == "__main__":
         a = np.median(offset_arrays[ii], axis=0)
         plt.plot(range(len(a)), a, label=offset_array_keys[ii], linestyle="none", marker=markers[ii], alpha=0.65, ms=10)
     
-    plt.ylim(0,1)
+    #plt.ylim(0,1)
     plt.legend()
     plt.show()

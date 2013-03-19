@@ -1,3 +1,5 @@
+from __future__ import division
+
 # Standard library
 import os, sys
 import logging
@@ -13,20 +15,20 @@ from mpl_toolkits.mplot3d import axes3d
 import dcimage
 import util
 
-def plot_raw_images(images, trial=None):
+def plot_raw_images(images, file_prefix):
     """ Generate ... """
     
     for image in images:
-        filename = "images/trial{}_index{}.png".format(trial, image.index)
+        filename = "images/{}_index{}.png".format(file_prefix, image.index)
         image.save(filename=filename)        
         # TODO: APW
 
-def plot_coadded_images(images, trial=None):
+def plot_coadded_images(images, file_prefix):
     """ Generate ... """
     
     min,max = None, None
     for ii,image in enumerate(images):
-        filename = "images/trial{}_{}coadded.png".format(trial, ii+1)
+        filename = "images/{}_{}coadded.png".format(file_prefix, ii+1)
         
         if min == None and max == None:
             min,max = image.save(filename=filename)
@@ -42,15 +44,19 @@ def hogg_test_one(gridsize=3):
         of the star.
     """
     
-    positions = []
-    for xx in [-0.25, 0.25]:
-        for yy in [-0.25, 0.25]:
-            positions.append((8.+xx,8.+yy))
+    pos = (8.,8.)
     
-    for star_position in [(8.,8.)] + positions: 
-        for sigma in [0.1, 1.0, 3.0]:
+    positions = []
+    for xx in [-0.25, 0.25, 0., -0.5, 0.5]:
+        for yy in [-0.25, 0.25, 0., -0.5, 0.5]:
+            positions.append((pos[0]+xx,pos[1]+yy))
+    
+    positions = [(8.13566032163,7.76037597468)]
+    
+    for sigma in [0.01, 1.0, 2.0]:
+        for star_position in positions: 
             # == Run first without noise as a proof of concept ==
-            image = dcimage.DCImage(shape=(16,16), \
+            image = dcimage.DCImage(shape=(15,15), \
                                   index=0)
             image.add_noise(sky_level=5., \
                           sigma=sigma)
@@ -60,11 +66,19 @@ def hogg_test_one(gridsize=3):
                                   sigma=1.2)
             image.add_star(star=star)
             
-            chisq = util.position_chisq(image, gridsize)
+            #star_model = util.gaussian_star(flux=image.star.flux, position=(k,k), sigma=image.star.sigma, shape=image.shape)
+            """
+            star_model = image.star_model
+            
+            chisq = util.position_chisq(image, gridsize=gridsize)
             params = util.fit_surface(chisq)
             x0,y0 = util.surface_maximum(params)
-            d = (image.shape[0] - gridsize) / 2 + 1
-            true_x0, true_y0 = image.star.x0-d, image.star.y0-d
+            """
+            
+            x0,y0 = image.centroid_star(gridsize=3)
+            
+            d = (image.shape[0] - gridsize) / 2. + 1
+            true_x0, true_y0 = image.star.x0, image.star.y0
             
             plt.clf()
             plt.subplot(121)
@@ -72,8 +86,10 @@ def hogg_test_one(gridsize=3):
             
             plt.subplot(122)
             plt.imshow(chisq, cmap=cm.gray, interpolation="none")
-            plt.plot(true_x0, true_y0, 'rD', alpha=0.5, ms=15)
+            plt.plot(true_x0-d, true_y0-d, 'rD', alpha=0.5, ms=15)
             plt.plot(x0, y0, 'go')
+            plt.xlim(-0.5, 2.5)
+            plt.ylim(2.5, -0.5)
             
             chisq_norm = chisq - chisq.min()
             
@@ -88,8 +104,10 @@ def hogg_test_one(gridsize=3):
             plt.suptitle("Measured position: ({:.5f},{:.5f}) -- True position: ({:.5f},{:.5f})".format(x0,y0,true_x0, true_y0))
             
             plt.savefig("images/tests/hogg_test_one_sigma{:.2f}_star{pos[0]:.2f}-{pos[1]:.2f}.png".format(sigma, pos=star_position))
+        
+        break
 
-def best_worst_smoothed_unsmoothed_plot(images, smoothed_images):
+def best_worst_smoothed_unsmoothed_plot(images):
     """ Generate two plots: 
         - the first is what we think is the *best* epoch, smoothed and unsmoothed, noisy and noiseless
         - the second is what we think is the *worst* epoch, smoothed and unsmoothed, noisy and noiseless
@@ -97,29 +115,42 @@ def best_worst_smoothed_unsmoothed_plot(images, smoothed_images):
         Note: the Gremlin should f-ck with this! Without the gremlin, for the worst image, the 
             smoothed and unsmoothed should be the same. With the gremlin, this won't be true.
     """
+    star_sigmas = np.array([image.star.sigma for image in images])
+    worst_sigma = star_sigmas.max()
     smoothed_images = [image.smoothed(sigma=worst_sigma) for image in images]
     
-    images = sorted(images, key=lambda x: x.star.sigma)
-    smoothed_images = sorted(smoothed_images, key=lambda x: x.star.sigma)
+    #images = sorted(images, key=lambda x: x.star.sigma)
+    #smoothed_images = sorted(smoothed_images, key=lambda x: x.star.sigma)
+    imagesAndSmoothedImages = zip(images,smoothed_images)
+    imagesAndSmoothedImages.sort(key=lambda x: x[0].star.sigma)
+    images,smoothed_images = zip(*imagesAndSmoothedImages)
     
     plt.figure()
     plt.subplot(221)
-    plt.imshow(images[0].star_model_data, cmap=cm.gray, interpolation="none")
+    plt.title("star model")
+    plt.imshow(images[0].star_model, cmap=cm.gray, interpolation="none")
     plt.subplot(222)
+    plt.title("image data")
     plt.imshow(images[0].image_data, cmap=cm.gray, interpolation="none")
     plt.subplot(223)
-    plt.imshow(smoothed_images[0].star_model_data, cmap=cm.gray, interpolation="none")
+    plt.title("smoothed star model")
+    plt.imshow(smoothed_images[0].star_model, cmap=cm.gray, interpolation="none")
     plt.subplot(224)
+    plt.title("smoothed data")
     plt.imshow(smoothed_images[0].image_data, cmap=cm.gray, interpolation="none")
     
     plt.figure()
     plt.subplot(221)
-    plt.imshow(images[-1].star_model_data, cmap=cm.gray, interpolation="none")
+    plt.title("star model")
+    plt.imshow(images[-1].star_model, cmap=cm.gray, interpolation="none")
     plt.subplot(222)
+    plt.title("image data")
     plt.imshow(images[-1].image_data, cmap=cm.gray, interpolation="none")
     plt.subplot(223)
-    plt.imshow(smoothed_images[-1].star_model_data, cmap=cm.gray, interpolation="none")
+    plt.title("smoothed star model")
+    plt.imshow(smoothed_images[-1].star_model, cmap=cm.gray, interpolation="none")
     plt.subplot(224)
+    plt.title("smoothed data")
     plt.imshow(smoothed_images[-1].image_data, cmap=cm.gray, interpolation="none")
     plt.show()
 

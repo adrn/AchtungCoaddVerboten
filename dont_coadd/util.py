@@ -12,6 +12,26 @@ import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import axes3d
 import scipy.optimize as so
 
+def gaussian_star(position, flux, sigma, shape):
+    """ Return an image of a Gaussian star.
+        
+        Parameters
+        ----------
+        position : tuple
+            The center of the star (x0,y0).
+        flux : float
+            The flux value or normalization.
+        sigma : float
+            The spread of the star.
+        shape : tuple
+            The size of the meshgrid to put the star on.
+    """
+    x0,y0 = position
+    x = np.arange(shape[0])
+    y = np.arange(shape[1])
+    x_grid, y_grid = np.meshgrid(x,y)
+    return flux / (2.*np.pi*sigma**2) * np.exp(- ((x_grid-x0)**2 + (y_grid-y0)**2) / (2*sigma**2))
+
 def save_image_data(data, filename, min=None, max=None, clip=True):
     """ Save an array of image data as a png 
     
@@ -93,7 +113,7 @@ def plot_grid(images, filename):
     plt.subplots_adjust(wspace=-0.4, hspace=0.0)
     fig.savefig(filename)
 
-def position_chisq(image, gridsize):
+def position_chisq(image, gridsize, test=False):
     """ Compute the chisquared value for placing the model in every position
         on a 3x3 grid around the aligned positions.
     """
@@ -102,15 +122,33 @@ def position_chisq(image, gridsize):
     g = np.ceil(gridsize / 2)
     
     chisq = np.zeros((gridsize,gridsize), dtype=float)
-    data_cutout = image.image_data[g:-g,g:-g]
-    shp = image.star_model_data.shape
+    data_cutout = image.image_data[g:-g,g:-g] - image.sky_level
+    
+    star_model = image.star_model
+    shp = star_model.shape
     
     for ii in range(gridsize):
         for jj in range(gridsize):
-            star_cutout = image.star_model_data[ii:shp[0]+ii-f,jj:shp[1]+jj-f] 
+            star_cutout = star_model[ii:shp[0]+(ii-f),jj:shp[1]+(jj-f)]
+            
+            # BAD!
+            if test:
+                plt.clf()
+                plt.subplot(131)
+                plt.title("Model[{}:{}, {}:{}]".format(ii,shp[0]+ii-f,jj,shp[1]+jj-f))
+                plt.imshow(star_cutout, cmap=cm.gray, interpolation="none")
+                plt.subplot(132)
+                plt.title("Data")
+                plt.imshow(data_cutout, cmap=cm.gray, interpolation="none")
+                plt.subplot(133)
+                plt.title("Data-Model -> {:.5f}".format(np.sum((data_cutout-star_cutout)**2)))
+                plt.imshow((data_cutout-star_cutout), cmap=cm.gray, interpolation="none")
+                plt.savefig("images/tests/{}_{}.png".format(ii,jj))
+            
             chisq[ii,jj] = np.sum((data_cutout-star_cutout)**2) / image.sigma**2
-    
-    return chisq
+
+    return np.flipud(np.fliplr(chisq))
+    #return chisq
 
 '''
 def gaussian2D(p, x, y):
@@ -183,13 +221,15 @@ def fit_surface(data):
     r = data.shape[0]
     xx, yy = np.meshgrid(range(r), range(r))
     initialParameterGuess = [0.]*6
+    xx = xx.astype(float)
+    yy = yy.astype(float)
     
     fitParameters, ier = so.leastsq(error_function, \
                                     initialParameterGuess, \
                                     args=(xx.ravel(), yy.ravel(), data.ravel()), \
                                     maxfev=10000, \
                                     full_output=False)
-    
+
     return fitParameters
 
 def surface_maximum(params):
