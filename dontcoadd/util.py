@@ -1,4 +1,7 @@
-""" """
+# coding: utf-8
+from __future__ import division
+
+""" Utility functions and misc. """
 
 # Standard library
 import os, sys
@@ -9,10 +12,9 @@ import Image
 import numpy as np
 import matplotlib.cm as cm
 import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d import axes3d
 import scipy.optimize as so
 
-def gaussian_star(position, flux, sigma, shape):
+def gaussian(position, flux, sigma, shape):
     """ Return an image of a Gaussian star.
         
         Parameters
@@ -32,38 +34,19 @@ def gaussian_star(position, flux, sigma, shape):
     x_grid, y_grid = np.meshgrid(x,y)
     return flux / (2.*np.pi*sigma**2) * np.exp(- ((x_grid-x0)**2 + (y_grid-y0)**2) / (2*sigma**2))
 
-def save_image_data(data, filename, min=None, max=None, clip=True):
-    """ Save an array of image data as a png 
-    
-        Parameters
-        ----------
-        data : numpy.ndarray
-            A 2D numpy array of image data.
-        filename : str
-            A full filename (path + filename) to save the bitmap image to.
-        min, max, clip (optional)
-            Passed through to linear_scale().
-    """
-    scaled = 255.*linear_scale(data, min=min, max=max, clip=clip)
-    
-    im = Image.fromarray(scaled.astype(np.uint8))
-    im.save(filename)
-    
-    return min, max
-
 def linear_scale(data, min=None, max=None, clip=True):
     """ Scale an array of data to values between 0 and 1
     
         Parameters
         ----------
         data : numpy.ndarray
-            An ND numpy array to be rescaled.
-        min : float
-            TODO
-        max : float
-            TODO
-        clip : bool
-            TODO
+            The numpy array to be rescaled.
+        min : float (optional)
+            The minimum pixel value -- gets mapped to 0.
+        max : float (optional)
+            The maximum pixel value -- gets mapped to 1.
+        clip : bool (optional)
+            If true, will clip values > 1 to 1 and < 0 to 0.
     """
     
     if min == None:
@@ -78,7 +61,30 @@ def linear_scale(data, min=None, max=None, clip=True):
         scaled[scaled > 1] = 1.0
         scaled[scaled < 0] = 0.0
     
-    return scaled
+    return scaled    
+
+def save_image_data(data, filename, min=None, max=None, clip=True):
+    """ Save a 2D array of image data as a png.
+    
+        Parameters
+        ----------
+        data : numpy.ndarray
+            A 2D numpy array of image data.
+        filename : str
+            A full filename (path + filename) to save the bitmap image to.
+        min : float (optional)
+            The minimum pixel value -- gets mapped to 0.
+        max : float (optional)
+            The maximum pixel value -- gets mapped to 1.
+        clip : bool (optional)
+            If true, will clip values > 1 to 1 and < 0 to 0.
+    """
+    scaled = 255.*linear_scale(data, min=min, max=max, clip=clip)
+    
+    im = Image.fromarray(scaled.astype(np.uint8))
+    im.save(filename)
+    
+    return min, max
 
 def plot_grid(images, filename):
     """ Takes an array of images and plots them on a grid, then saves to a file. """
@@ -130,70 +136,10 @@ def position_chisq(image, gridsize, test=False):
     for ii in range(gridsize):
         for jj in range(gridsize):
             star_cutout = star_model[ii:shp[0]+(ii-f),jj:shp[1]+(jj-f)]
-            
-            # BAD!
-            if test:
-                plt.clf()
-                plt.subplot(131)
-                plt.title("Model[{}:{}, {}:{}]".format(ii,shp[0]+ii-f,jj,shp[1]+jj-f))
-                plt.imshow(star_cutout, cmap=cm.gray, interpolation="none")
-                plt.subplot(132)
-                plt.title("Data")
-                plt.imshow(data_cutout, cmap=cm.gray, interpolation="none")
-                plt.subplot(133)
-                plt.title("Data-Model -> {:.5f}".format(np.sum((data_cutout-star_cutout)**2)))
-                plt.imshow((data_cutout-star_cutout), cmap=cm.gray, interpolation="none")
-                plt.savefig("images/tests/{}_{}.png".format(ii,jj))
-            
             chisq[ii,jj] = np.sum((data_cutout-star_cutout)**2) / image.sigma**2
 
     return np.flipud(np.fliplr(chisq))
-    #return chisq
 
-'''
-def gaussian2D(p, x, y):
-    """ Returns a 2D Gaussian on the meshgrid x,y given the parameter array 'p'
-
-    Parameters
-    ----------
-    p : numpy.ndarray, list, tuple
-        p is a list of parameters for the Gaussian fit. 
-          p[0] <-> flux
-          p[1] <-> star sigma (rotationally symmetric)
-          p[2] <-> x0, x coordinate of the center of the Gaussian
-          p[3] <-> y0, y coordinate of the center of the Gaussian
-          p[4] <-> sky, the background level of the Gaussian
-    x : numpy.ndarray
-        x is the result of a numpy meshgrid -- x,y = np.meshgrid(range(imageXSize),range(imageYSize))
-    y : numpy.ndarray
-        y is the result of a numpy meshgrid -- x,y = np.meshgrid(range(imageXSize),range(imageYSize))
-
-    """
-    return p[0] / (2.*np.pi*p[1]**2) * np.exp(-((x-p[2])**2 + (y-p[3])**2) / (2*p[1]**2)) + p[4]
-
-def errorFunction(p, x, y, data):
-    """ Returns the 'distance' of the model (with the given parameters 'p')
-        to the data
-
-    Parameters
-    ----------
-    p : numpy.ndarray, list, tuple
-        p is a list of parameters for the Gaussian fit. 
-          p[0] <-> flux
-          p[1] <-> star sigma (rotationally symmetric)
-          p[2] <-> x0, x coordinate of the center of the Gaussian
-          p[3] <-> y0, y coordinate of the center of the Gaussian
-          p[4] <-> sky, the background level of the Gaussian
-    x : numpy.ndarray
-        x is the result of a numpy meshgrid -- x,y = np.meshgrid(range(imageXSize),range(imageYSize))
-    y : numpy.ndarray
-        y is the result of a numpy meshgrid -- x,y = np.meshgrid(range(imageXSize),range(imageYSize))
-    data : numpy.ndarray
-        The image data to be compared to the model.
-        
-    """
-    return gaussian2D(p, x, y) - data
-    
 def fit_2d_gaussian(data):
     r = data.shape[0]
     xx,yy = np.meshgrid(range(r), range(r))
@@ -206,34 +152,48 @@ def fit_2d_gaussian(data):
                                     full_output=False)
     
     return fitParameters
-'''
 
-def surface_model(params, x, y):
+def quad_surface_model(params, x, y):
     a, b, c, d, e, f = params
     return a + (b * x) + (c * y) + (d * x ** 2) + (2.0 * e * x * y) + (f * y ** 2)
 
-def error_function(params, x, y, data):
+def quad_surface_error_function(params, x, y, data):
     return surface_model(params, x, y) - data
 
-def fit_surface(data):
-    """ Fit a 2D surface to 3D data """
+def fit_quad_surface(data):
+    """ Use scipy.optimize.leastsq to fit a 2D quadratic surface 
+        to 3D data.
+    
+        Parameters
+        ----------
+        data : numpy.ndarray
+            A 2D array of values.
+            
+    """
     
     r = data.shape[0]
     xx, yy = np.meshgrid(range(r), range(r))
-    initialParameterGuess = [0.]*6
     xx = xx.astype(float)
     yy = yy.astype(float)
     
-    fitParameters, ier = so.leastsq(error_function, \
-                                    initialParameterGuess, \
+    fit_parameters, ier = so.leastsq(error_function, \
+                                    [0.]*6, \
                                     args=(xx.ravel(), yy.ravel(), data.ravel()), \
                                     maxfev=10000, \
                                     full_output=False)
 
-    return fitParameters
+    return fit_parameters
 
-def surface_maximum(params):
-    """ Compute the maximum of a 2D surface, given the parameters of the model """
+def quad_surface_maximum(params):
+    """ Analytically compute the maximum of a 2D surface, given the 
+        parameters of the quadratic model.
+        
+        Parameters
+        ----------
+        params : iterable
+            'Best' model parameters for a quadratic surface.
+    
+    """
     a,b,c,d,e,f = params
     x = (c*e - b*f) / (2.0*d*f - 2.0*e**2)
     y = (b*e - c*d) / (2.0*d*f - 2.0*e**2)
