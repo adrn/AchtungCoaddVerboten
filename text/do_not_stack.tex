@@ -143,4 +143,25 @@ We begin by simulating a stack of multi-epoch imaging with ideal conditions: per
 
 Once we generate a set of observations, we cumulatively sum the images with different ordering and weighting of the stack. 
 
+\section{Results and discussion}
+
+\clearpage
+\begin{table}
+~ \hfill \begin{tabular}{rcc|c}
+ & \multicolumn{2}{c}{\textbf{stack~options}} & \textbf{fit~options} \\
+\hline
+ \textbf{sorting} & PSF & $S/N$ & $S/N$ \\
+ \small\em (line thickness) & \small\em (2) & \small\em (1) & \small\em (4) \\
+\hline
+ \textbf{weighting} & 1 & $[S/N]^2$ & --- \\
+ \small\em (line color) & \small\em (\#000) & \small\em (\#777) & \small\em (\#000) \\
+\hline
+ \textbf{smoothing} & on & off & --- \\
+ \small\em (line style) & \small\em (solid) & \small\em (dotted) & \small\em (solid) \\
+\hline
+\end{tabular} \hfill ~
+\caption{The $2\times 2\times 2$ options for stacking and the
+  line-style options for the plots thereof.\label{tab:legend}}
+\end{table}
+
 \end{document}
