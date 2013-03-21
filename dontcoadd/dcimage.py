@@ -35,7 +35,7 @@ class DCStar(object):
             Parameters
             ----------
             position : tuple
-                Should be a tuple of (x,y) values
+                The pixel coordinates of the star.
             flux : float
                 Some measure of the brightness of the star in the image
             sigma : float
@@ -49,12 +49,10 @@ class DCStar(object):
         logger.debug("Created new DCStar : {}".format(self))
     
     def __repr__(self):
-        return "<DCStar ({:0.2f},{:0.2f}), Flux={:0.1f}, σ={:.2f}>".format(self.x0,
-                                                                           self.y0,
-                                                                           self.flux,
-                                                                           self.sigma)
+        return "<DCStar flux={:0.1f}, σ={:.2f}>".format(self.flux,
+                                                        self.sigma)
     
-    def image(self, shape):
+    def as_image(self, shape):
         """ Return a 2D array with the star. """
         return util.gaussian(flux=self.flux, 
                              position=(self.x0,self.y0),
@@ -70,10 +68,8 @@ class DCStar(object):
             raise TypeError("Addition only supported with DCImage objects.")
             
         new_image = other.copy()
-        
         new_image.star = self
-        new_image.data += self.image(new_image.shape)
-        
+        new_image.data += self.as_image(new_image.shape)
         logger.debug("Added {star} to {img}".format(img=other, star=self))
         
         return new_image
@@ -90,7 +86,7 @@ class DCGaussianNoiseModel(object):
         self.sigma = sigma
         self.sky_level = sky_level
     
-    def image(self, shape):
+    def as_image(self, shape):
         """ Return a 2D image with the given noise properties """
         return np.random.normal(self.sky_level, self.sigma, shape)
     
@@ -103,10 +99,11 @@ class DCGaussianNoiseModel(object):
         new_image = other.copy()
         new_image.sigma = np.sqrt(self.sigma**2 + other.sigma**2)
         new_image.sky_level += self.sky_level
-        new_image.data += self.image(new_image.shape)
-        
+        new_image.data += self.as_image(new_image.shape)
         logger.debug("Added noise to {} with sky={:0.2f}, σ={:.2f}".format(self, 
                         self.sky_level, self.sigma))
+        
+        return new_image
 
     def __radd__(self, other):
         return self.__add__(other)

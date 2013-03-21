@@ -86,6 +86,7 @@ def save_image_data(data, filename, min=None, max=None, clip=True):
     
     return min, max
 
+# TODO: ?????
 def plot_grid(images, filename):
     """ Takes an array of images and plots them on a grid, then saves to a file. """
     
@@ -137,7 +138,7 @@ def quad_surface_model(params, x, y):
     return a + (b * x) + (c * y) + (d * x ** 2) + (2.0 * e * x * y) + (f * y ** 2)
 
 def quad_surface_error_function(params, x, y, data):
-    return surface_model(params, x, y) - data
+    return quad_surface_model(params, x, y) - data
 
 def fit_quad_surface(data):
     """ Use scipy.optimize.leastsq to fit a 2D quadratic surface 
@@ -155,7 +156,7 @@ def fit_quad_surface(data):
     xx = xx.astype(float)
     yy = yy.astype(float)
     
-    fit_parameters, ier = so.leastsq(error_function, \
+    fit_parameters, ier = so.leastsq(quad_surface_error_function, \
                                     [0.]*6, \
                                     args=(xx.ravel(), yy.ravel(), data.ravel()), \
                                     maxfev=10000, \
@@ -177,49 +178,3 @@ def quad_surface_maximum(params):
     x = (c*e - b*f) / (2.0*d*f - 2.0*e**2)
     y = (b*e - c*d) / (2.0*d*f - 2.0*e**2)
     return x,y
-
-def position_chisq(image, gridsize):
-    """ Compute the chisquared value for placing the model in every position
-        on a 3x3 grid around the aligned positions.
-    """
-    
-    f = gridsize-1
-    g = np.ceil(gridsize / 2)
-    
-    chisq = np.zeros((gridsize,gridsize), dtype=float)
-    data_cutout = image.data[g:-g,g:-g] - image.sky_level
-    
-    star_model = image.star_model
-    shp = star_model.shape
-    
-    for ii in range(gridsize):
-        for jj in range(gridsize):
-            star_cutout = star_model[ii:shp[0]+(ii-f),jj:shp[1]+(jj-f)]
-            chisq[ii,jj] = np.sum((data_cutout-star_cutout)**2) / image.sigma**2
-
-    return np.flipud(np.fliplr(chisq))
-
-
-def centroid_star(image, gridsize=3, plot=False):
-    """ Given noisy image data, and the 'model' image data (noiseless image),
-        compute the chi-squared at all positions on a 3x3 grid around the nominal
-        (true, known) position of the star.
-    """
-    
-    chisq = util.position_chisq(self, gridsize=gridsize)
-    params = util.fit_surface(chisq)
-    
-    if plot:
-        xx,yy = np.meshgrid(range(gridsize), range(gridsize))
-        
-        fig = plt.figure()
-        ax = fig.add_subplot(111, projection='3d')
-        ax.plot_wireframe(xx+7, yy+7, chisq)
-        ax.plot([self.star.x0,self.star.x0],[self.star.y0,self.star.y0], [chisq.min(), chisq.max()], 'r-')
-        #fig.savefig("images/centroid_chisq_{}coadded.png".format(self.index+1))
-    
-    x0,y0 = util.surface_maximum(params)
-    d = (self.shape[0] - gridsize) / 2 + 1
-    
-    logger.debug("\t\tFound star at: {}".format((x0+d, y0+d)))
-    return (x0+d, y0+d)

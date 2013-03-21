@@ -1,7 +1,10 @@
 # coding: utf-8
 from __future__ import division
 
-""" """
+""" Coadding your images and making measurements on the *stacked* data is
+    bad! You should coadd, detect sources, then make your measurements on 
+    the full stack.
+"""
 
 # Standard library
 import os, sys
@@ -10,12 +13,10 @@ from argparse import ArgumentParser
 
 # Third-party
 import matplotlib
-matplotlib.use("TkAgg")
+#matplotlib.use("TkAgg")
 import matplotlib.cm as cm
 import numpy as np
-np.set_printoptions(linewidth=150, precision=5)
 import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d import axes3d
 
 # Project
 import dont_coadd.util as dcutil
