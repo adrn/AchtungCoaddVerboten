@@ -203,9 +203,8 @@ class DCCoaddmaschine(object):
         """
         self.images = images
     
-    def sorted_images(self, sort_by=None):
-        """ Return the images sorted by some """
-        
+    def _sort_indices(self, sort_by=None):
+        """ """
         if sort_by == "sn2":
             indices = np.argsort([image.SN2 for image in self.images])[::-1]
         elif sort_by == "psf":
@@ -215,13 +214,15 @@ class DCCoaddmaschine(object):
         else:
             raise ValueError("sort_by can only be 'psf' or 'sn2'")
         
+        return indices
+    
+    def sorted_images(self, sort_by=None):
+        """ Return the images sorted by some """
+        indices = self._sort_indices(sort_by=sort_by)
         return [self.images[idx] for idx in indices]
-        
-    def coadd(self, weight_by=None, sort_by=None):
-        """ Return a cumulative coadd ... """
-
-        sorted_images = self.sorted_images(sort_by=sort_by)
-        
+    
+    def weight_images(self, sorted_images, weight_by=None):
+        """ """
         if weight_by == None:
             weights = np.ones(len(self.images))
         elif weight_by == "sn2":
@@ -230,7 +231,14 @@ class DCCoaddmaschine(object):
         weight_images = []
         for ii in range(len(sorted_images)):
             weight_images.append(np.ones(self.images[0].shape)*weights[ii])
-        weight_images = np.array(weight_images)
+        
+        return np.array(weight_images)
+    
+    def coadd(self, weight_by=None, sort_by=None):
+        """ Return a cumulative coadd ... """
+
+        sorted_images = self.sorted_images(sort_by=sort_by)
+        weight_images = self.weight_images(sorted_images, weight_by=weight_by)
         
         coadded_images = []
         for ii in range(len(sorted_images)):
@@ -247,24 +255,24 @@ class DCCoaddmaschine(object):
             coadded_image.sigma = sigma
             coadded_image.data = coadded_data
             coadded_image.sky_level = 0.0
-            
             coadded_images.append(coadded_image)
         
         return coadded_images
         
-    
-    @property
-    def star_model(self):
-        k = self.shape[0] // 2 + 1
-        star_data = np.array([util.gaussian_star(position=(k,k), flux=star.flux, sigma=star.sigma, shape=self.shape) for star in self.stars])
-        return np.sum(self.weight_images*star_data, axis=0) / np.sum(self.weight_images, axis=0)
+    def coadd_models(self, sort_by=None, weight_by=None):
+        sorted_images = self.sorted_images(sort_by)
+        weight_images = self.weight_images(sorted_images, weight_by=weight_by)
+        sorted_star_data = [image.star.data for image in sorted_images]
         
-def cumulative_coadd(images, weight_by=None):
-    """ Cumulatively coadd the image data with an optional weight per image """
-    
-    coadded_images = []
-    for ii in range(len(images)):
-        coadded_images.append(DCCoaddedImage(images[:ii+1], index=ii, weight_by=weight_by))
-    
-    return coadded_images
+        coadded_models = []
+        for ii in range(len(sorted_star_data)):
+            c = np.sum(weight_images[:ii+1]*sorted_star_data[:ii+1], axis=0) / np.sum(weight_images[:ii+1], axis=0)
+            
+            im = DCImage(sorted_images[0].shape, id=ii+1)
+            im.sigma = 0.
+            im.sky_level = 0.
+            im.data = c
+            coadded_models.append(im)
+            
+        return coadded_models
     

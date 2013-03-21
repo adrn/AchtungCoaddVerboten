@@ -104,22 +104,69 @@ class TestDCCoaddmaschine(object):
         
         maschine = DCCoaddmaschine(images)
         
-        d = np.ravel([image.data.ravel() for image in images])
+        d = np.ravel([image.data.ravel()-image.sky_level for image in images])
         vmin, vmax = d.min(), d.max()
         
+        # -----
+        # Sort images by SN2
         sn2_sorted = maschine.sorted_images(sort_by="sn2")
         fig,axes = plot_image_grid(sn2_sorted, vmin=vmin, vmax=vmax)
         for ii,ax in enumerate(np.ravel(axes)):
-            print(sn2_sorted[ii].SN2)
             ax.text(3,3,
-                    r"$\sigma_s$={0:.2f}".format(sn2_sorted[ii].star.sigma),
-                    color="red")
+                    r"$\sigma_S$={0:.2f}".format(sn2_sorted[ii].star.sigma),
+                    color="red",
+                    fontsize=16)
             ax.text(3,5,
+                    r"$\sigma_N$={0:.2f}".format(sn2_sorted[ii].sigma),
+                    color="red",
+                    fontsize=16)
+            ax.text(3,7,
                     r"$[S/N]^2$={0:.2f}".format(sn2_sorted[ii].SN2),
-                    color="red")
+                    color="red",
+                    fontsize=16)
         fig.savefig(os.path.join(test_path, "sn2_sorted.png"))
-        #maschine.sorted_images(sort_by="psf")
         
+        # Plot models
+        sn2_sorted_models = maschine.coadd_models(sort_by="sn2")
+        fig,axes = plot_image_grid(sn2_sorted_models, vmin=vmin, vmax=vmax)
+        for ii,ax in enumerate(np.ravel(axes)):
+            ax.text(3,3,
+                    r"$\sigma_S$={0:.2f}".format(sn2_sorted[ii].star.sigma),
+                    color="red",
+                    fontsize=16)
+        fig.savefig(os.path.join(test_path, "sn2_sorted_models.png"))
+        
+        # -----
+        # Sort images by PSF
+        psf_sorted = maschine.sorted_images(sort_by="psf")
+        fig,axes = plot_image_grid(psf_sorted, vmin=vmin, vmax=vmax)
+        for ii,ax in enumerate(np.ravel(axes)):
+            ax.text(3,3,
+                    r"$\sigma_S$={0:.2f}".format(psf_sorted[ii].star.sigma),
+                    color="red",
+                    fontsize=16)
+            ax.text(3,5,
+                    r"$\sigma_N$={0:.2f}".format(psf_sorted[ii].sigma),
+                    color="red",
+                    fontsize=16)
+            ax.text(3,7,
+                    r"$[S/N]^2$={0:.2f}".format(psf_sorted[ii].SN2),
+                    color="red",
+                    fontsize=16)
+        fig.savefig(os.path.join(test_path, "psf_sorted.png"))
+        
+        # Plot models
+        psf_sorted_models = maschine.coadd_models(sort_by="psf")
+        fig,axes = plot_image_grid(psf_sorted_models, vmin=vmin, vmax=vmax)
+        for ii,ax in enumerate(np.ravel(axes)):
+            ax.text(3,3,
+                    r"$\sigma_S$={0:.2f}".format(psf_sorted[ii].star.sigma),
+                    color="red",
+                    fontsize=16)
+        fig.savefig(os.path.join(test_path, "psf_sorted_models.png"))
+        
+        # -----
+        # This is a long line that i'm writing just to piss off dan so i'm going to drag it out as far as i can all the way off the page i'm going to keep going because dan doesn't like it
         vmin,vmax = None,None
         for weight_by in [None, "sn2"]:
             for sort_by in ["sn2", "psf"]:
@@ -137,7 +184,7 @@ def plot_image_grid(images, vmin=None, vmax=None, filename=None):
         vmin,vmax = images[-1].data.min(), coadded_images[-1].data.max()
         
     for ii,ax in enumerate(np.ravel(axes)):
-        ax.imshow(images[ii].data, vmin=vmin, vmax=vmax,
+        ax.imshow(images[ii].data-images[ii].sky_level, vmin=vmin, vmax=vmax,
                   cmap=cm.Greys_r, interpolation="none")
     
     if filename == None:
