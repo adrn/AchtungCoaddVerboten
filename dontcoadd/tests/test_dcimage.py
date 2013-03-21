@@ -166,7 +166,7 @@ class TestDCCoaddmaschine(object):
         fig.savefig(os.path.join(test_path, "psf_sorted_models.png"))
         
         # -----
-        # This is a long line that i'm writing just to piss off dan so i'm going to drag it out as far as i can all the way off the page i'm going to keep going because dan doesn't like it
+        
         vmin,vmax = None,None
         for weight_by in [None, "sn2"]:
             for sort_by in ["sn2", "psf"]:

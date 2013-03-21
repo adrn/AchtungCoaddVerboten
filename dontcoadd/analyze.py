@@ -34,7 +34,7 @@ def _slice_indices(image, gridsize, x_offset=0, y_offset=0):
     
     return (x_idx1, x_idx2), (y_idx1, y_idx2)
 
-def position_chisq(image, gridsize):
+def position_chisq(image, model_image=None, gridsize=3):
     """ Compute the chisquared value for placing the model in every position
         on a 3x3 grid around the aligned positions.
     """
@@ -51,7 +51,10 @@ def position_chisq(image, gridsize):
     data_cutout -= image.sky_level
     
     # Create a model image -- the star by itself
-    star_model = image.star.data
+    if model_image == None:
+        star_model = image.star.data
+    else:
+        star_model = model_image.data
     
     for ii in range(gridsize):
         for jj in range(gridsize):
@@ -64,13 +67,13 @@ def position_chisq(image, gridsize):
 
     return chisq
 
-def centroid_star(image, gridsize=3):
+def centroid_star(image, model_image=None, gridsize=3):
     """ Given noisy image data, and the 'model' image data (noiseless image),
         compute the chi-squared at all positions on a 3x3 grid around the nominal
         (true, known) position of the star.
     """
     
-    chisq = position_chisq(image, gridsize=gridsize)
+    chisq = position_chisq(image, model_image, gridsize=gridsize)
     params = fit_quad_surface(chisq)
     
     x0,y0 = quad_surface_maximum(params)

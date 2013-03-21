@@ -255,6 +255,7 @@ class DCCoaddmaschine(object):
             coadded_image.sigma = sigma
             coadded_image.data = coadded_data
             coadded_image.sky_level = 0.0
+            coadded_image.star = image.star
             coadded_images.append(coadded_image)
         
         return coadded_images

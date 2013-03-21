@@ -16,7 +16,7 @@ import pytest
 import matplotlib.pyplot as plt
 from matplotlib import cm
 
-from ..dcimage import DCImage, DCStar, DCGaussianNoiseModel
+from ..dcimage import *
 from ..analyze import position_chisq, _slice_indices, centroid_star
 from ..util import save_image_data
 
@@ -161,6 +161,38 @@ class TestPositionChisq(object):
                 ax.text(ii-1,jj-1, "{0}".format(chisq[jj,ii]), color="red")
         fig.savefig(os.path.join(test_path, "half_integer_chisq.png"))
         
-     
+    def test_coadd_position_chisq(self):
         
+        images = []
+        for ii in range(64):
+            image = DCImage((16,16), id=ii)
+            star = DCStar(position=(8.,8.), 
+                          flux=32., 
+                          sigma=np.random.uniform(1.,2.), 
+                          shape=image.shape)
+            noise = DCGaussianNoiseModel(sky_level=0.01, #np.random.uniform(0,),
+                                         sigma=np.random.uniform(1.,4.),
+                                         shape=image.shape)
+            images.append(image+noise+star)
         
+        maschine = DCCoaddmaschine(images)
+        coadded_images = maschine.coadd(weight_by=None, sort_by="sn2")
+        model_images = maschine.coadd_models(weight_by=None, sort_by="sn2")
+        
+        offsets = []
+        for image,model in zip(coadded_images,model_images):
+            plt.clf()
+            plt.subplot(121)
+            plt.imshow(image.data, interpolation="nearest", cmap=cm.Greys_r)
+            plt.subplot(122)
+            plt.imshow(model.data, interpolation="nearest", cmap=cm.Greys_r)
+            plt.show()
+            
+            x0,y0 = centroid_star(image, model, gridsize=3)
+            offset = np.sqrt((x0-image.star.x0)**2 + (y0-image.star.y0)**2)
+            offsets.append(offset)
+        
+        plt.plot(range(1,len(offsets)+1), offsets)
+        plt.show()
+        
+        assert False
