@@ -26,8 +26,8 @@ class TestPositionChisq(object):
     
     def test_grid_shift(self):
         image = DCImage(shape=(31,31))
-        star = DCStar(position=(15.,15.), flux=100., sigma=2.0)
-        noise = DCGaussianNoiseModel(sky_level=0., sigma=0.001)
+        star = DCStar(position=(15.,15.), flux=100., sigma=2.0, shape=image.shape)
+        noise = DCGaussianNoiseModel(sky_level=0., sigma=0.001, shape=image.shape)
         image = image + star + noise
         
         gridsize = 3
@@ -47,7 +47,7 @@ class TestPositionChisq(object):
         data_cutout -= image.sky_level
         
         # Create a model image -- the star by itself
-        star_model = image.star.as_image(image.shape)
+        star_model = image.star.data
         
         min = None
         max = None
@@ -70,8 +70,8 @@ class TestPositionChisq(object):
     @pytest.mark.parametrize(("true_x0","true_y0"), [(15.,15.),(15.5,15.),(15.3,15.8),(16.,16.)])
     def test_centroid_star(self, true_x0, true_y0):
         image = DCImage(shape=(31,31))
-        star = DCStar(position=(true_x0,true_y0), flux=100., sigma=2.0)
-        noise = DCGaussianNoiseModel(sky_level=0., sigma=0.001)
+        star = DCStar(position=(true_x0,true_y0), flux=100., sigma=2.0, shape=image.shape)
+        noise = DCGaussianNoiseModel(sky_level=0., sigma=0.001, shape=image.shape)
         image = image + star + noise
         
         gridsize = 3
@@ -100,7 +100,7 @@ class TestPositionChisq(object):
     
     def test_half_integer_offset(self):
         image = DCImage(shape=(31,31))
-        star = DCStar(position=(15.8,15.3), flux=100., sigma=2.0)
+        star = DCStar(position=(15.8,15.3), flux=100., sigma=2.0, shape=image.shape)
         #noise = DCGaussianNoiseModel(sky_level=0., sigma=0.001)
         image = image + star# + noise
         
@@ -109,7 +109,7 @@ class TestPositionChisq(object):
         shp = (gridsize,gridsize)
         xx,yy = _slice_indices(image, gridsize)
         # Create a model image -- the star by itself
-        star_cutout = image.star.as_image(image.shape)[yy[0]:yy[1], xx[0]:xx[1]]
+        star_cutout = image.star.data[yy[0]:yy[1], xx[0]:xx[1]]
         
         # Empty array to fill with chisq values evaluated for each offset
         chisq = np.zeros(shp, dtype=float)
@@ -161,6 +161,6 @@ class TestPositionChisq(object):
                 ax.text(ii-1,jj-1, "{0}".format(chisq[jj,ii]), color="red")
         fig.savefig(os.path.join(test_path, "half_integer_chisq.png"))
         
-        
+     
         
         

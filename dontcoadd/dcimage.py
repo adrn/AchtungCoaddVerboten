@@ -29,7 +29,7 @@ logger.addHandler(ch)
 
 class DCStar(object):
     
-    def __init__(self, position, flux, sigma):
+    def __init__(self, position, flux, sigma, shape):
         """ A simulated observation of a star.
         
             Parameters
@@ -46,18 +46,16 @@ class DCStar(object):
         self.flux = flux
         self.sigma = sigma
         
+        self.data = util.gaussian(flux=self.flux, 
+                                  position=(self.x0,self.y0),
+                                  sigma=self.sigma,
+                                  shape=shape)
+        
         logger.debug("Created new DCStar : {}".format(self))
     
     def __repr__(self):
         return "<DCStar flux={:0.1f}, σ={:.2f}>".format(self.flux,
                                                         self.sigma)
-    
-    def as_image(self, shape):
-        """ Return a 2D array with the star. """
-        return util.gaussian(flux=self.flux, 
-                             position=(self.x0,self.y0),
-                             sigma=self.sigma,
-                             shape=shape)
     
     def __add__(self, other):
         """ Add the star to the image. Addition only supported with 
@@ -69,7 +67,7 @@ class DCStar(object):
             
         new_image = other.copy()
         new_image.star = self
-        new_image.data += self.as_image(new_image.shape)
+        new_image.data += self.data
         logger.debug("Added {star} to {img}".format(img=other, star=self))
         
         return new_image
@@ -79,16 +77,13 @@ class DCStar(object):
 
 class DCGaussianNoiseModel(object):
     
-    def __init__(self, sigma, sky_level):
+    def __init__(self, sigma, sky_level, shape):
         """ A Gaussian noise model for images with given std. dev. sigma
             and a uniform sky brightness sky_level.
         """
         self.sigma = sigma
         self.sky_level = sky_level
-    
-    def as_image(self, shape):
-        """ Return a 2D image with the given noise properties """
-        return np.random.normal(self.sky_level, self.sigma, shape)
+        self.data = np.random.normal(self.sky_level, self.sigma, shape)
     
     def __add__(self, other):
         """ Add this noise model to the image. """
@@ -99,7 +94,7 @@ class DCGaussianNoiseModel(object):
         new_image = other.copy()
         new_image.sigma = np.sqrt(self.sigma**2 + other.sigma**2)
         new_image.sky_level += self.sky_level
-        new_image.data += self.as_image(new_image.shape)
+        new_image.data += self.data
         logger.debug("Added noise to {} with sky={:0.2f}, σ={:.2f}".format(self, 
                         self.sky_level, self.sigma))
         
@@ -167,14 +162,14 @@ class DCImage(object):
     
     def gremlinized(self, amplitude):
         """ Return a gremlinized copy of the current image instance. Gremlinized means
-            our knowledge of the true read noise and star spread gets obscured by some
-            factor ('amplitude'), and our model image (the noiseless star image) is
-            changed to represent what we *think* the source is.
+            our knowledge of the true read noise and star spread is wrong by some
+            amount (specified with 'amplitude'). Our model image (the noiseless 
+            star image) is changed to represent what we *think* the source is.
         """
             
         copied = copy.copy(self)
-        copied.sigma = self.sigma * np.random.uniform(1-amplitude, 1+amplitude)
-        copied.star.sigma = self.star.sigma * np.random.uniform(1-amplitude, 1+amplitude)
+        copied.sigma = self.sigma * np.random.uniform(1.-amplitude, 1.+amplitude)
+        copied.star.sigma = self.star.sigma * np.random.uniform(1.-amplitude, 1.+amplitude)
         
         return copied
     
@@ -201,45 +196,68 @@ class DCImage(object):
 
 class DCCoaddmaschine(object):
     
-    def __init__(self, images, weight_by=None, index=None):
-        """ """
+    def __init__(self, images):
+        """ Das Coaddmaschine is created with a list of DCImage objects, and 
+            will return cumulative coadds of the images with specified weights
+            and ordering.
+        """
+        self.images = images
+    
+    def sorted_images(self, sort_by=None):
+        """ Return the images sorted by some """
         
-        # Set default values for missing parameters
-        if index == None:
-            index = 0
-        
-        self.index = index
-        self.shape = images[0].shape
-        self.sky_level = 0.0
-        self.sigma = np.sqrt(np.sum([image.sigma for image in images]))
-        
-        # Figure out if the user wants to weight the images
-        if weight_by == None:
-            self.weight_images = np.ones((len(images), ) + self.shape)
+        if sort_by == "sn2":
+            indices = np.argsort([image.SN2 for image in self.images])[::-1]
+        elif sort_by == "psf":
+            indices = np.argsort([image.star.sigma for image in self.images])
+        elif sort_by == None:
+            indices = range(len(self.images))
         else:
-            self.weight_images = np.array([np.ones(self.shape)*getattr(image, weight_by) for image in images])
+            raise ValueError("sort_by can only be 'psf' or 'sn2'")
         
-        # Sum images with weights
-        image_data = np.array([image.data-image.sky_level for image in images])
-        self.data = np.sum(self.weight_images*image_data, axis=0) / np.sum(self.weight_images, axis=0)
+        return [self.images[idx] for idx in indices]
         
-        # APW: HACK!
-        #star_model_data = np.array([image.star_model_data for image in images])
-        #self.star_model_data = np.sum(weight_images*star_model_data, axis=0) / np.sum(weight_images, axis=0)
+    def coadd(self, weight_by=None, sort_by=None):
+        """ Return a cumulative coadd ... """
+
+        sorted_images = self.sorted_images(sort_by=sort_by)
         
-        self.stars = [image.star for image in images]
+        if weight_by == None:
+            weights = np.ones(len(self.images))
+        elif weight_by == "sn2":
+            weights = np.array([image.SN2 for image in sorted_images])
+        
+        weight_images = []
+        for ii in range(len(sorted_images)):
+            weight_images.append(np.ones(self.images[0].shape)*weights[ii])
+        weight_images = np.array(weight_images)
+        
+        coadded_images = []
+        for ii in range(len(sorted_images)):
+            image_subset = sorted_images[:ii+1]
+            
+            individual_data = np.array([(image.data-image.sky_level) 
+                                         for image in image_subset])*weight_images[:ii+1]
+            coadded_data = np.sum(individual_data, axis=0) / np.sum(weight_images[:ii+1], axis=0)
+            
+            # Compute the new variance as a sum in quadrature 
+            sigma = np.sqrt(np.sum([image.sigma for image in image_subset]))
+            
+            coadded_image = DCImage(self.images[0].shape, id=ii+1)
+            coadded_image.sigma = sigma
+            coadded_image.data = coadded_data
+            coadded_image.sky_level = 0.0
+            
+            coadded_images.append(coadded_image)
+        
+        return coadded_images
+        
     
     @property
     def star_model(self):
         k = self.shape[0] // 2 + 1
         star_data = np.array([util.gaussian_star(position=(k,k), flux=star.flux, sigma=star.sigma, shape=self.shape) for star in self.stars])
         return np.sum(self.weight_images*star_data, axis=0) / np.sum(self.weight_images, axis=0)
-    
-    @property
-    def SN2(self): return None
-    def add_star(self): return None
-    def add_noise(self): return None
-    def gremlinized(self): return None
         
 def cumulative_coadd(images, weight_by=None):
     """ Cumulatively coadd the image data with an optional weight per image """

@@ -51,7 +51,7 @@ def position_chisq(image, gridsize):
     data_cutout -= image.sky_level
     
     # Create a model image -- the star by itself
-    star_model = image.star.as_image(image.shape)
+    star_model = image.star.data
     
     for ii in range(gridsize):
         for jj in range(gridsize):
